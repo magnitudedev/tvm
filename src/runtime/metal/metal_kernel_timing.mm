@@ -156,8 +156,20 @@ class KernelCapture final : public ffi::ModuleObj {
         long double elapsed = static_cast<long double>(end - start) * nanoseconds_per_tick;
         TVM_FFI_ICHECK(std::isfinite(elapsed) && elapsed <= std::numeric_limits<int64_t>::max())
             << "Kernel timestamp duration is out of range";
+        // Keep endpoints in one capture-relative calibrated GPU clock. They are
+        // not host perf_counter timestamps and must not be joined to that clock.
+        TVM_FFI_ICHECK(start >= gpu_start_) << "Kernel timestamp precedes capture";
+        long double offset = static_cast<long double>(start - gpu_start_) * nanoseconds_per_tick;
+        TVM_FFI_ICHECK(std::isfinite(offset) &&
+                      offset + elapsed <= std::numeric_limits<int64_t>::max())
+            << "Kernel timestamp endpoint is out of range";
+        const int64_t started_ns = static_cast<int64_t>(std::llround(offset));
+        const int64_t elapsed_ns = static_cast<int64_t>(std::llround(elapsed));
         result.push_back({{"name", ffi::String(names_[index])},
-                          {"elapsed_ns", static_cast<int64_t>(std::llround(elapsed))}});
+                          {"elapsed_ns", elapsed_ns},
+                          {"started_ns", started_ns},
+                          {"ended_ns", started_ns + elapsed_ns},
+                          {"dispatch", static_cast<int64_t>(index)}});
       }
     };
     return result;
