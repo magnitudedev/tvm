@@ -297,6 +297,7 @@ public:
   explicit MetalRawStream(id<MTLCommandBuffer> commandBuffer): Stream(nullptr) {
     buffer_ = commandBuffer;
   }
+  void SetCommandBuffer(id<MTLCommandBuffer> commandBuffer) { buffer_ = commandBuffer; }
   id<MTLCommandBuffer> GetCommandBuffer(std::string label = "", bool attach_error_callback = true) override {
     return buffer_;
   }

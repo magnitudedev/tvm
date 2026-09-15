@@ -33,6 +33,7 @@
 #include <tvm/support/io.h>
 #include <array>
 #include <mutex>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -354,11 +355,15 @@ static ffi::Module MetalModuleLoadFromBytes(const ffi::Bytes& bytes) {
 
 void SetMetalStream(TVMStreamHandle stream) {
   metal::MetalThreadEntry* t = metal::MetalThreadEntry::ThreadLocal();
-  auto s = new metal::MetalRawStream(static_cast<id<MTLCommandBuffer>>(stream));
-  if (t->stream.size() <= t->device.device_id) {
-    t->stream.resize(t->device.device_id);
-  }
-  t->stream[t->device.device_id] = static_cast<TVMStreamHandle>(s);
+  static thread_local std::vector<std::unique_ptr<metal::MetalRawStream>> borrowed;
+  size_t index = t->device.device_id;
+  if (borrowed.size() <= index) borrowed.resize(index + 1);
+  if (!borrowed[index])
+    borrowed[index] = std::make_unique<metal::MetalRawStream>(static_cast<id<MTLCommandBuffer>>(stream));
+  else
+    borrowed[index]->SetCommandBuffer(static_cast<id<MTLCommandBuffer>>(stream));
+  if (t->stream.size() <= index) t->stream.resize(index + 1);
+  t->stream[index] = static_cast<TVMStreamHandle>(borrowed[index].get());
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {
