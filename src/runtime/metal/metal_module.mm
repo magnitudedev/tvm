@@ -44,6 +44,7 @@
 #include "../pack_args.h"
 #include "../thread_storage_scope.h"
 #include "metal_common.h"
+#include "metal_kernel_timing.h"
 #include "tvm/runtime/device_api.h"
 
 namespace tvm {
@@ -258,7 +259,7 @@ class MetalWrappedFunc {
       // encoder. We create a fresh encoder per dispatch and endEncoding
       // immediately — torch owns the command buffer and handles commit/sync.
       id<MTLCommandBuffer> cb = stream->GetCommandBuffer();
-      id<MTLComputeCommandEncoder> encoder = [cb computeCommandEncoder];
+      id<MTLComputeCommandEncoder> encoder = metal::CreateKernelEncoder(cb, func_name_);
       [encoder setComputePipelineState:scache_[device_id]];
       for (size_t i = 0; i < num_buffer_args_; ++i) {
         void* buf = args[static_cast<int>(i)].cast<void*>();
@@ -346,7 +347,7 @@ static ffi::Module MetalModuleLoadFromBytes(const ffi::Bytes& bytes) {
                                ffi::Map<ffi::String, ffi::String>(), metal_language_version);
 }
 
-void SetMetalStream(TVMStreamHandle stream) {
+void SetMetalStream(TVMStreamHandle stream, uint64_t submitting_thread) {
   metal::MetalThreadEntry* t = metal::MetalThreadEntry::ThreadLocal();
   static thread_local std::vector<std::unique_ptr<metal::MetalRawStream>> borrowed;
   size_t index = t->device.device_id;
@@ -357,6 +358,7 @@ void SetMetalStream(TVMStreamHandle stream) {
     borrowed[index]->SetCommandBuffer(static_cast<id<MTLCommandBuffer>>(stream));
   if (t->stream.size() <= index) t->stream.resize(index + 1);
   t->stream[index] = static_cast<TVMStreamHandle>(borrowed[index].get());
+  metal::SetKernelCaptureSubmittingThread(submitting_thread);
 }
 
 TVM_FFI_STATIC_INIT_BLOCK() {
