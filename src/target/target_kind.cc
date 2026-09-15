@@ -431,6 +431,12 @@ TVM_REGISTER_TARGET_KIND("metal", kDLMetal)
     .add_attr_option<int64_t>("max_shared_memory_per_block", refl::DefaultValue(32768))
     .add_attr_option<int64_t>("thread_warp_size", refl::DefaultValue(16))
     .add_attr_option<int64_t>("max_function_args", refl::DefaultValue(31))
+    .add_attr_option<int64_t>("metal_language_version", refl::DefaultValue(23))
+    .add_attr_option<bool>("supports_bfloat16", refl::DefaultValue(false))
+    .add_attr_option<bool>("supports_simdgroup_permute", refl::DefaultValue(false))
+    .add_attr_option<bool>("supports_simdgroup_reduction", refl::DefaultValue(false))
+    .add_attr_option<bool>("supports_simdgroup_matrix", refl::DefaultValue(false))
+    .add_attr_option<bool>("supports_metal4", refl::DefaultValue(false))
     .set_default_keys({"metal", "gpu"});
 
 TVM_REGISTER_TARGET_KIND("vulkan", kDLVulkan)

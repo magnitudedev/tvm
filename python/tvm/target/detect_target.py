@@ -23,12 +23,19 @@ from . import Target
 
 
 def _detect_metal(dev: Device) -> Target:
+    get_property = get_global_func("device_api.metal.get_target_property")
     return Target(
         {
             "kind": "metal",
-            "max_shared_memory_per_block": 32768,
+            "max_shared_memory_per_block": dev.max_shared_memory_per_block,
             "max_threads_per_block": dev.max_threads_per_block,
             "thread_warp_size": dev.warp_size,
+            "metal_language_version": get_property(dev, "metal_language_version"),
+            "supports_bfloat16": get_property(dev, "supports_bfloat16"),
+            "supports_simdgroup_permute": get_property(dev, "supports_simdgroup_permute"),
+            "supports_simdgroup_reduction": get_property(dev, "supports_simdgroup_reduction"),
+            "supports_simdgroup_matrix": get_property(dev, "supports_simdgroup_matrix"),
+            "supports_metal4": get_property(dev, "supports_metal4"),
         }
     )
 

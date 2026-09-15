@@ -72,6 +72,18 @@
 namespace tvm {
 namespace runtime {
 namespace metal {
+
+struct MetalTargetCapabilities {
+  int language_version;
+  bool supports_bfloat16;
+  bool supports_simdgroup_permute;
+  bool supports_simdgroup_reduction;
+  bool supports_simdgroup_matrix;
+  bool supports_metal4;
+};
+
+MetalTargetCapabilities GetMetalTargetCapabilities(int device_id);
+MTLLanguageVersion MetalLanguageVersionFromNumber(int version);
 /*!
  * \brief Wrapper on autoreleasepool with exception handling
  *
