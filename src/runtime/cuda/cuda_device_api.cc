@@ -107,8 +107,12 @@ class CUDADeviceAPI final : public DeviceAPI {
         *rv = CUDA_VERSION;
         return;
       }
-      case kDriverVersion:
+      case kDriverVersion: {
+        int version;
+        CUDA_CALL(cudaDriverGetVersion(&version));
+        *rv = std::to_string(version);
         return;
+      }
       case kL2CacheSizeBytes: {
         // Get size of device l2 cache size in bytes.
         int l2_size = 0;
