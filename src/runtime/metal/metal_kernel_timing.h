@@ -24,6 +24,7 @@
 
 namespace tvm::runtime::metal {
 void SetKernelCaptureSubmittingThread(uint64_t identity);
+bool HasKernelCaptureForSubmittingThread();
 // Ordinary encoder when capture is disabled; stage-boundary timestamps otherwise.
 id<MTLComputeCommandEncoder> CreateKernelEncoder(id<MTLCommandBuffer> buffer,
                                                 const std::string& kernel_name);

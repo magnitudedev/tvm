@@ -197,6 +197,12 @@ class KernelCapture final : public ffi::ModuleObj {
   bool started_ = false, closed_ = false, failed_ = false;
 };
 
+bool HasKernelCaptureForSubmittingThread() {
+  if (capture_count.load(std::memory_order_acquire) == 0) return false;
+  std::lock_guard<std::mutex> lock(capture_mutex);
+  return captures.find(submitting_thread) != captures.end();
+}
+
 id<MTLComputeCommandEncoder> CreateKernelEncoder(id<MTLCommandBuffer> buffer,
                                                 const std::string& kernel_name) {
   if (capture_count.load(std::memory_order_acquire) == 0) return [buffer computeCommandEncoder];

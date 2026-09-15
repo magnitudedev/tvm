@@ -209,6 +209,51 @@ class MetalModuleNode final : public ffi::ModuleObj {
   std::mutex mutex_;
 };
 
+// A generated host program owns one ordered compute pass on Torch's borrowed
+// command buffer. Its module lease is scoped inside the dispatch-queue callable,
+// so returns and exceptions finish encoding before Torch can reuse the buffer.
+class MetalProgramScope;
+static thread_local MetalProgramScope* active_program = nullptr;
+
+class MetalProgramScope final : public ffi::ModuleObj {
+ public:
+  explicit MetalProgramScope(id<MTLCommandBuffer> buffer)
+      : buffer_(nil),
+        capture_(metal::HasKernelCaptureForSubmittingThread()) {
+    TVM_FFI_ICHECK(active_program == nullptr) << "Nested Metal program encoding";
+    buffer_ = [buffer retain];
+    active_program = this;
+  }
+  ~MetalProgramScope() {
+    if (encoder_ != nil) {
+      [encoder_ endEncoding];
+      [encoder_ release];
+    }
+    [buffer_ release];
+    active_program = nullptr;
+  }
+  const char* kind() const final { return "metal_program_scope"; }
+  int GetPropertyMask() const final { return ffi::Module::kRunnable; }
+  ffi::Optional<ffi::Function> GetFunction(const ffi::String&) final {
+    return std::nullopt;
+  }
+  bool CanReuseEncoder() const { return !capture_; }
+  id<MTLComputeCommandEncoder> Encoder(id<MTLCommandBuffer> buffer) {
+    TVM_FFI_ICHECK(buffer == buffer_) << "Metal program changed its command buffer";
+    if (encoder_ == nil) {
+      // The default compute encoder dispatches serially, preserving the ordered
+      // read/write dependencies of consecutive T.Kernel regions in this program.
+      encoder_ = [[buffer_ computeCommandEncoder] retain];
+      TVM_FFI_ICHECK(encoder_ != nil) << "Cannot create Metal program encoder";
+    }
+    return encoder_;
+  }
+ private:
+  id<MTLCommandBuffer> buffer_;
+  id<MTLComputeCommandEncoder> encoder_ = nil;
+  bool capture_;
+};
+
 // a wrapped function class to get packed func.
 class MetalWrappedFunc {
  public:
@@ -253,13 +298,10 @@ class MetalWrappedFunc {
       int blockSize = wl.block_dim(0) * wl.block_dim(1) * wl.block_dim(2);
       auto maxTotalThreadsPerThreadgroup = scache_[device_id].maxTotalThreadsPerThreadgroup;
       TVM_FFI_ICHECK_LE(blockSize, maxTotalThreadsPerThreadgroup);
-      // [tilelang] Use standalone encoder instead of GetPendingComputeEncoder().
-      // MetalRawStream wraps torch's command buffer with a nil queue, so the
-      // batched dispatch path (GetOrCreatePendingCommandBuffer) produces nil
-      // encoder. We create a fresh encoder per dispatch and endEncoding
-      // immediately — torch owns the command buffer and handles commit/sync.
       id<MTLCommandBuffer> cb = stream->GetCommandBuffer();
-      id<MTLComputeCommandEncoder> encoder = metal::CreateKernelEncoder(cb, func_name_);
+      const bool reuse_encoder = active_program != nullptr && active_program->CanReuseEncoder();
+      id<MTLComputeCommandEncoder> encoder = reuse_encoder
+          ? active_program->Encoder(cb) : metal::CreateKernelEncoder(cb, func_name_);
       [encoder setComputePipelineState:scache_[device_id]];
       for (size_t i = 0; i < num_buffer_args_; ++i) {
         void* buf = args[static_cast<int>(i)].cast<void*>();
@@ -274,10 +316,9 @@ class MetalWrappedFunc {
       MTLSize dimGrid = MTLSizeMake(wl.grid_dim(0), wl.grid_dim(1), wl.grid_dim(2));
       MTLSize dimBlock = MTLSizeMake(wl.block_dim(0), wl.block_dim(1), wl.block_dim(2));
       [encoder dispatchThreadgroups:dimGrid threadsPerThreadgroup:dimBlock];
-      // [tilelang] endEncoding immediately since torch owns the command buffer.
-      // Upstream batched path defers this to FlushCommandBuffer(), but
-      // MetalRawStream does not support batching (nil queue).
-      [encoder endEncoding];
+      // Stage-boundary captures and independently called kernels own their pass.
+      // Ordinary composed programs finish the shared pass through their RAII scope.
+      if (!reuse_encoder) [encoder endEncoding];
     };
   }
 
@@ -377,7 +418,12 @@ TVM_FFI_STATIC_INIT_BLOCK() {
              return MetalModuleCreateImpl(std::move(smap), std::move(fmt), std::move(fmap),
                                           std::move(source), metal_language_version);
            })
-      .def("metal.SetStream", SetMetalStream);
+      .def("metal.SetStream", SetMetalStream)
+      .def("metal.BeginProgram", [](TVMStreamHandle stream, uint64_t submitting_thread) {
+        SetMetalStream(stream, submitting_thread);
+        return ffi::Module(ffi::make_object<MetalProgramScope>(
+            static_cast<id<MTLCommandBuffer>>(stream)));
+      });
 }
 }  // namespace runtime
 }  // namespace tvm
