@@ -30,6 +30,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -435,7 +437,9 @@ void CodeGenMetal::VisitExpr_(const FloatImmNode* op, std::ostream& os) {  // NO
   } else if (std::isnan(op->value)) {
     temp << "NAN";
   } else {
-    temp << std::scientific << op->value;
+    temp << std::scientific
+         << std::setprecision(std::numeric_limits<double>::max_digits10 - 1)
+         << op->value;
     if (op->dtype.bits() == 32)
       temp << 'f';
     else if (op->dtype.bits() == 16)
